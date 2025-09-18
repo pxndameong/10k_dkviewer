@@ -7,8 +7,8 @@ st.set_page_config(
 )
 
 st.title("Selamat Datang di Aplikasi DK Viewer!")
-st.write("Aplikasi ini dibuat untuk melihat data prediksi curah hujan di berbagai wilayah. Train 10k epoch.")
-
+st.write("Aplikasi ini dibuat untuk melihat data prediksi curah hujan di berbagai wilayah")
+st.write("**TRAIN 10k epoch**")
 st.markdown("""
 Silakan pilih halaman dari menu di **sidebar** untuk mulai menjelajahi data:
 
