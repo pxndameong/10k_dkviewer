@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+plotly
+pyarrow
+matplotlib
+basemap
+basemap-data-hires
+scipy
