@@ -13,10 +13,10 @@ st.set_page_config(
 os.environ["STREAMLIT_WATCHDOG"] = "false"
 
 # URL dasar untuk data prediksi
-base_url_pred = "data/100k_epoch/pred"
+base_url_pred = "data/10k_epoch/pred"
 
 # URL dasar untuk data padanan
-base_url_padanan = "data/100k_epoch/padanan"
+base_url_padanan = "data/10k_epoch/padanan"
 
 # Info dataset hanya untuk data 'pred' yang memiliki subfolder
 dataset_info = {

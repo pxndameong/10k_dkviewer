@@ -19,7 +19,7 @@ st.set_page_config(
 os.environ["STREAMLIT_WATCHDOG"] = "false"
 
 # Pastikan folder data Anda berada di lokasi yang benar
-base_url = "data/100k_epoch/pred"
+base_url = "data/10k_epoch/pred"
 
 dataset_info = {
     "0 Variabel": {"folder": "0_var", "prefix": "all_data_0var"},
