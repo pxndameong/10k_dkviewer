@@ -180,7 +180,7 @@ if submit:
                     heatmap = go.Heatmap(
                         z=df_pivot.values, x=[station_short_names[name] for name in df_pivot.columns],
                         y=df_pivot.index, colorscale=[[0, 'rgb(240, 248, 255)'], [1, 'rgb(0, 0, 128)']],
-                        zmin=0, zmax=max_mae_value,
+                        zmin=0, zmax=700,
                         colorbar=dict(title='MAE', thickness=20) if i == 0 else None,
                         showscale=i == 0, hoverinfo='text', text=hover_text,
                     )
