@@ -73,11 +73,16 @@ def load_padanan_data(tahun: int):
             df[col] = None
     return df[required_cols]
 
-def calculate_mae_by_year_and_station(data_dict, years):
-    """Menghitung MAE per tahun untuk setiap stasiun dari setiap model."""
+def calculate_mae_by_year_and_station(data_dict, years, selected_station=None):
+    """Menghitung MAE per tahun untuk setiap stasiun atau stasiun yang dipilih."""
     mae_list = []
     all_stations = {s['name']: (s['lat'], s['lon']) for s in station_data}
     station_names_list = [s['name'] for s in station_data]
+    
+    # Filter stasiun jika ada yang dipilih
+    if selected_station and selected_station != "Semua Stasiun":
+        station_names_list = [selected_station]
+        
     for model_name, df_full in data_dict.items():
         if df_full.empty: continue
         for station_name in station_names_list:
@@ -101,10 +106,10 @@ def calculate_mae_by_year_and_station(data_dict, years):
         return pd.DataFrame()
 
 # --- Main Streamlit app logic ---
-st.title("🗺️ DK Viewer - Diagram Hovmoler MAE")
+st.title("🗺️ DK Viewer - Diagram Hovmoler & Analisis MAE")
 st.markdown("""
-Visualisasi ini menunjukkan performa MAE dari tiga model (0, 10, dan 51 variabel) per tahun untuk setiap stasiun. 
-Warna yang lebih gelap menunjukkan nilai MAE yang lebih tinggi.
+Visualisasi ini menunjukkan performa MAE dari tiga model (0, 10, dan 51 variabel) per tahun untuk setiap stasiun.
+Pilih 'Semua Stasiun' untuk melihat Diagram Hovmoler. Pilih stasiun spesifik untuk melihat grafik MAE per tahun.
 """)
 
 ### Blok Konfigurasi di Sidebar
@@ -118,8 +123,12 @@ with st.sidebar.form("config_form"):
         tahun_from = st.selectbox("Tahun Awal:", year_options, index=0)
     with col2:
         tahun_until = st.selectbox("Tahun Akhir:", year_options, index=len(year_options) - 1)
-        
-    submit = st.form_submit_button("🚀 Buat Diagram Hovmoler")
+    
+    # Tambahkan selectbox untuk stasiun
+    station_names = [s['name'] for s in station_data]
+    selected_station = st.selectbox("Pilih Stasiun:", ["Semua Stasiun"] + station_names, index=0)
+
+    submit = st.form_submit_button("🚀 Buat Diagram")
 
 ### Blok Utama yang Hanya Tampil Setelah Tombol Submit Ditekan
 if submit:
@@ -142,90 +151,115 @@ if submit:
                     all_data_by_model[model_name] = pd.concat(all_filtered_years, ignore_index=True)
                 else:
                     all_data_by_model[model_name] = pd.DataFrame()
-            mae_results = calculate_mae_by_year_and_station(all_data_by_model, years_to_process)
             
+            # Panggil fungsi dengan stasiun yang dipilih
+            mae_results = calculate_mae_by_year_and_station(all_data_by_model, years_to_process, selected_station)
+        
         if mae_results.empty:
             st.warning("⚠️ Tidak ada data MAE yang dapat dihitung. Pastikan file data tersedia.")
         else:
-            st.success("✅ Data berhasil diproses. Diagram Hovmoler siap.")
-
-            # --- Urutan stasiun yang baru
-            station_order_short = ['S.505', 'S.329', 'S.333', 'S.294', 'S.384', 'S.393', 'S.218']
-            station_order_full = {s['short_name']: s['name'] for s in station_data}
-            station_names_ordered = [station_order_full[s] for s in station_order_short]
+            st.success("✅ Data berhasil diproses. Diagram siap.")
             
-            # --- Pilih plot berdasarkan opsi pengguna ---
-            if plot_choice == 'Plotly Pixel':
-                st.subheader("Diagram Hovmoler (Plotly)")
-                max_mae_value = mae_results['mae'].max()
-                fig = make_subplots(
-                    rows=1, cols=len(dataset_info),
-                    subplot_titles=list(dataset_info.keys()),
-                    shared_yaxes=True, horizontal_spacing=0.05
+            # --- Kondisi untuk menampilkan Hovmoler atau Line Plot ---
+            if selected_station == "Semua Stasiun":
+                # --- Urutan stasiun yang baru
+                station_order_short = ['S.505', 'S.329', 'S.333', 'S.294', 'S.384', 'S.393', 'S.218']
+                station_order_full = {s['short_name']: s['name'] for s in station_data}
+                station_names_ordered = [station_order_full[s] for s in station_order_short]
+                
+                if plot_choice == 'Plotly Pixel':
+                    st.subheader("Diagram Hovmoler (Plotly)")
+                    max_mae_value = mae_results['mae'].max()
+                    fig = make_subplots(
+                        rows=1, cols=len(dataset_info),
+                        subplot_titles=list(dataset_info.keys()),
+                        shared_yaxes=True, horizontal_spacing=0.05
+                    )
+                    for i, model_name in enumerate(dataset_info.keys()):
+                        df_plot = mae_results[mae_results['model'] == model_name].copy()
+                        years_df = pd.DataFrame({'year': years_to_process})
+                        stations_df = pd.DataFrame({'station': station_names_ordered})
+                        full_grid = pd.MultiIndex.from_product([years_df['year'], stations_df['station']], names=['year', 'station'])
+                        df_plot = df_plot.set_index(['year', 'station']).reindex(full_grid).reset_index()
+                        df_pivot = df_plot.pivot(index='year', columns='station', values='mae')
+                        df_pivot = df_pivot.reindex(columns=station_names_ordered)
+                        station_short_names = {s['name']: s['short_name'] for s in station_data}
+                        hover_text = df_pivot.apply(lambda col: [
+                            f"Stasiun: {station_short_names[col.name]}<br>Tahun: {year}<br>MAE: {value:.2f}"
+                            for year, value in col.items()
+                        ], axis=0).values.tolist()
+                        heatmap = go.Heatmap(
+                            z=df_pivot.values, x=[station_short_names[name] for name in df_pivot.columns],
+                            y=df_pivot.index, colorscale=[[0, 'rgb(240, 248, 255)'], [1, 'rgb(0, 0, 128)']],
+                            zmin=0, zmax=700,
+                            colorbar=dict(title='MAE', thickness=20) if i == 0 else None,
+                            showscale=i == 0, hoverinfo='text', text=hover_text,
+                        )
+                        fig.add_trace(heatmap, row=1, col=i + 1)
+                    fig.update_layout(title_text="Diagram Hovmoler MAE per Tahun dan Lokasi Stasiun", height=800, width=1200)
+                    fig.update_yaxes(title_text="Tahun", tickmode='linear', dtick=2, row=1, col=1)
+                    fig.update_xaxes(title_text="Stasiun", side="bottom")
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                elif plot_choice == 'Matplotlib Contour':
+                    st.subheader("Diagram Hovmoler (Matplotlib)")
+                    max_mae_value = mae_results['mae'].max()
+                    fig, axes = plt.subplots(1, len(dataset_info), figsize=(20, 10), sharey=True)
+                    
+                    for i, model_name in enumerate(dataset_info.keys()):
+                        df_plot = mae_results[mae_results['model'] == model_name].copy()
+                        years_df = pd.DataFrame({'year': years_to_process})
+                        stations_df = pd.DataFrame({'station': station_names_ordered})
+                        full_grid = pd.MultiIndex.from_product([years_df['year'], stations_df['station']], names=['year', 'station'])
+                        df_plot = df_plot.set_index(['year', 'station']).reindex(full_grid).reset_index()
+                        df_pivot = df_plot.pivot(index='year', columns='station', values='mae')
+                        df_pivot = df_pivot.reindex(columns=station_names_ordered)
+                        ax = axes[i]
+                        im = ax.contourf(
+                            df_pivot.columns, df_pivot.index, df_pivot.values,
+                            levels=np.linspace(0, max_mae_value, 20), cmap='viridis'
+                        )
+                        ax.set_title(model_name)
+                        ax.set_xlabel("Stasiun")
+                        ax.set_xticks(range(len(station_order_short)))
+                        ax.set_xticklabels(station_order_short, rotation=45, ha='right')
+                        ax.set_yticks(df_pivot.index[::2])
+                        ax.set_ylim(tahun_from, tahun_until)
+                        ax.set_aspect('auto')
+                        if i == 0:
+                            ax.set_ylabel("Tahun")
+                    
+                    fig.suptitle("Diagram Hovmoler MAE per Tahun dan Lokasi Stasiun", y=1.02, fontsize=16)
+                    fig.tight_layout()
+                    fig.colorbar(im, ax=axes, orientation='vertical', shrink=0.7, label='MAE')
+                    st.pyplot(fig)
+
+            else: # Visualisasi untuk satu stasiun saja
+                st.subheader(f"Grafik MAE per Tahun untuk {selected_station}")
+                
+                fig = go.Figure()
+                colors = px.colors.qualitative.Plotly
+                
+                for i, model_name in enumerate(dataset_info.keys()):
+                    df_line = mae_results[mae_results['model'] == model_name]
+                    if not df_line.empty:
+                        fig.add_trace(go.Scatter(
+                            x=df_line['year'],
+                            y=df_line['mae'],
+                            mode='lines+markers',
+                            name=f'MAE {model_name}',
+                            marker=dict(color=colors[i]),
+                            line=dict(color=colors[i]),
+                        ))
+                
+                fig.update_layout(
+                    title=f"Perbandingan MAE Tahunan di {selected_station}",
+                    xaxis_title="Tahun",
+                    yaxis_title="Mean Absolute Error (MAE)",
+                    legend_title="Model",
                 )
-                for i, model_name in enumerate(dataset_info.keys()):
-                    df_plot = mae_results[mae_results['model'] == model_name].copy()
-                    years_df = pd.DataFrame({'year': years_to_process})
-                    stations_df = pd.DataFrame({'station': station_names_ordered})
-                    full_grid = pd.MultiIndex.from_product([years_df['year'], stations_df['station']], names=['year', 'station'])
-                    df_plot = df_plot.set_index(['year', 'station']).reindex(full_grid).reset_index()
-                    df_pivot = df_plot.pivot(index='year', columns='station', values='mae')
-                    # Menggunakan urutan stasiun yang baru
-                    df_pivot = df_pivot.reindex(columns=station_names_ordered)
-                    station_short_names = {s['name']: s['short_name'] for s in station_data}
-                    hover_text = df_pivot.apply(lambda col: [
-                        f"Stasiun: {station_short_names[col.name]}<br>Tahun: {year}<br>MAE: {value:.2f}"
-                        for year, value in col.items()
-                    ], axis=0).values.tolist()
-                    heatmap = go.Heatmap(
-                        z=df_pivot.values, x=[station_short_names[name] for name in df_pivot.columns],
-                        y=df_pivot.index, colorscale=[[0, 'rgb(240, 248, 255)'], [1, 'rgb(0, 0, 128)']],
-                        zmin=0, zmax=700,
-                        colorbar=dict(title='MAE', thickness=20) if i == 0 else None,
-                        showscale=i == 0, hoverinfo='text', text=hover_text,
-                    )
-                    fig.add_trace(heatmap, row=1, col=i + 1)
-                fig.update_layout(title_text="Diagram Hovmoler MAE per Tahun dan Lokasi Stasiun", height=800, width=1200)
-                fig.update_yaxes(title_text="Tahun", tickmode='linear', dtick=2, row=1, col=1)
-                fig.update_xaxes(title_text="Stasiun", side="bottom")
+                
                 st.plotly_chart(fig, use_container_width=True)
-            
-            elif plot_choice == 'Matplotlib Contour':
-                st.subheader("Diagram Hovmoler (Matplotlib)")
-                max_mae_value = mae_results['mae'].max()
-                fig, axes = plt.subplots(1, len(dataset_info), figsize=(20, 10), sharey=True)
-                
-                for i, model_name in enumerate(dataset_info.keys()):
-                    df_plot = mae_results[mae_results['model'] == model_name].copy()
-                    years_df = pd.DataFrame({'year': years_to_process})
-                    stations_df = pd.DataFrame({'station': station_names_ordered})
-                    full_grid = pd.MultiIndex.from_product([years_df['year'], stations_df['station']], names=['year', 'station'])
-                    df_plot = df_plot.set_index(['year', 'station']).reindex(full_grid).reset_index()
-                    df_pivot = df_plot.pivot(index='year', columns='station', values='mae')
-                    # Menggunakan urutan stasiun yang baru
-                    df_pivot = df_pivot.reindex(columns=station_names_ordered)
-                    ax = axes[i]
-                    im = ax.contourf(
-                        df_pivot.columns, df_pivot.index, df_pivot.values,
-                        levels=np.linspace(0, max_mae_value, 20), cmap='viridis'
-                    )
-                    ax.set_title(model_name)
-                    ax.set_xlabel("Stasiun")
-                    ax.set_xticks(range(len(station_order_short)))
-                    ax.set_xticklabels(station_order_short, rotation=45, ha='right')
-                    ax.set_yticks(df_pivot.index[::2])
-                    ax.set_ylim(tahun_from, tahun_until)
-                    ax.set_aspect('auto')
-                    if i == 0:
-                        ax.set_ylabel("Tahun")
-                
-                fig.suptitle("Diagram Hovmoler MAE per Tahun dan Lokasi Stasiun", y=1.02, fontsize=16)
-                fig.tight_layout()
-                
-                # --- Perbaikan posisi Colorbar ---
-                fig.colorbar(im, ax=axes, orientation='vertical', shrink=0.7, label='MAE')
-
-                st.pyplot(fig)
 
             # --- Peta Lokasi Stasiun (Tampil di kedua opsi) ---
             st.header("📍 Peta Lokasi Stasiun")
