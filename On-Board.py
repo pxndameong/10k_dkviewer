@@ -12,16 +12,19 @@ st.write("**TRAIN 10k epoch**")
 st.markdown("""
 Silakan pilih halaman dari menu di **sidebar** untuk mulai menjelajahi data:
 
-* **Fitur 1 - Analytical Table**:  
+* **Fitur - Analytical Table**:  
   Menyediakan tabel analitis berisi data curah hujan historis maupun prediksi. Dilengkapi dengan filter stasiun (berdasarkan koordinat tertentu) agar pengguna dapat fokus pada lokasi spesifik. Selain itu, tersedia visualisasi *timeseries plot* untuk melihat tren curah hujan dari waktu ke waktu, memudahkan identifikasi pola musiman maupun anomali.  
 
-* **Fitur 2 - Analytical Comparation**:  
+* **Fitur - Analytical Comparation**:  
   Memungkinkan pengguna untuk melakukan perbandingan data antar-sumber (misalnya hasil prediksi dengan data observasi) secara kuantitatif. Analisis dapat berupa perhitungan metrik kesalahan (MAE, RMSE), deviasi antar dataset, maupun grafik komparasi sehingga memudahkan evaluasi performa model atau sumber data.  
 
-* **Fitur 3 - Hovmöller Comparation**:  
+* **Fitur - Hovmöller Comparation**:  
   Menyajikan metode visualisasi Hovmöller Diagram yang memperlihatkan distribusi curah hujan berdasarkan dimensi ruang (lintang/bujur) dan waktu. Fitur ini memungkinkan pengguna untuk membandingkan dinamika spasial-temporal antara hasil prediksi dan data observasi, sehingga perbedaan pola spasial dapat teridentifikasi dengan jelas.  
 
-* **Fitur 4 - Map Viewer**:  
+* **Fitur - Monthly Analytic**:  
+  Memungkinkan perbandingan kuantitatif data antar-sumber yang berfokus pada satu bulan spesifik sepanjang tahun. Fitur ini menyediakan tabel statistik metrik kesalahan (Error Bias, Absolute Error, Squared Error) dan grafik Time Series tahunan untuk evaluasi pola kinerja musiman model.
+
+* **Fitur - Map Viewer**:  
   Menyediakan peta interaktif yang menampilkan distribusi spasial curah hujan pada wilayah kajian. Peta ini dilengkapi dengan opsi *zoom in/out*, filter periode, serta interaksi klik pada titik koordinat untuk menampilkan nilai curah hujan. Dengan fitur ini, pengguna dapat melakukan eksplorasi visual secara intuitif dan memahami variasi curah hujan antar lokasi.  
 ---
 """)

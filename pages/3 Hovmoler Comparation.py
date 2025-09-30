@@ -122,6 +122,40 @@ with st.sidebar.form("config_form"):
     with col2:
         tahun_until = st.selectbox("Tahun Akhir:", year_options, index=len(year_options) - 1)
     
+    # Opsi pengaturan batas skala warna
+    st.subheader("Batas Skala Warna MAE (Z-Axis)")
+    scale_mode = st.radio(
+        "Mode Skala Warna:",
+        ('Otomatis (Data Min/Max)', 'Kustom'),
+        key='scale_mode'
+    )
+
+    custom_zmin = 0.0
+    custom_zmax = 800.0 # DIUBAH: Default Zmax menjadi 800
+
+    if scale_mode == 'Kustom':
+        col3, col4 = st.columns(2)
+        with col3:
+            # Pilihan kustom Z-min (Default: 0)
+            custom_zmin = st.number_input(
+                "MAE Minimum (Zmin):", 
+                min_value=0.0, 
+                value=0.0, 
+                step=1.0,
+                format="%f",
+                key='zmin_input'
+            )
+        with col4:
+            # Pilihan kustom Z-max (Default: 800)
+            custom_zmax = st.number_input(
+                "MAE Maksimum (Zmax):", 
+                min_value=1.0, 
+                value=800.0, # DIUBAH: Default Zmax menjadi 800
+                step=10.0,
+                format="%f",
+                key='zmax_input'
+            )
+    
     # Ganti st.selectbox dengan st.multiselect
     station_names = [s['name'] for s in station_data]
     selected_stations = st.multiselect(
@@ -136,6 +170,8 @@ with st.sidebar.form("config_form"):
 if submit:
     if tahun_from > tahun_until:
         st.error("❌ Tahun 'Awal' tidak boleh lebih baru dari tahun 'Akhir'.")
+    elif scale_mode == 'Kustom' and custom_zmin >= custom_zmax:
+        st.error("❌ Zmin harus lebih kecil dari Zmax saat menggunakan mode Kustom.")
     elif not selected_stations:
         st.warning("⚠️ Silakan pilih setidaknya satu stasiun untuk menampilkan diagram.")
     else:
@@ -164,6 +200,16 @@ if submit:
         else:
             st.success("✅ Data berhasil diproses. Diagram Hovmoler siap.")
             
+            # --- TENTUKAN BATAS ZMIN/ZMAX BERDASARKAN MODE YANG DIPILIH ---
+            if scale_mode == 'Otomatis (Data Min/Max)':
+                # Batas otomatis: 0 dan nilai maksimum data MAE yang ada
+                final_zmin = 0.0 # MAE tidak mungkin negatif
+                final_zmax = mae_results['mae'].max() * 1.05 # Tambahkan sedikit buffer (5%)
+            else:
+                # Batas kustom
+                final_zmin = custom_zmin
+                final_zmax = custom_zmax
+            
             # --- Urutan stasiun yang dipilih (disesuaikan dengan urutan multiselect)
             station_order_short_dict = {s['name']: s['short_name'] for s in station_data}
             station_order_short = [station_order_short_dict[name] for name in selected_stations]
@@ -172,7 +218,7 @@ if submit:
             # --- Pilih plot berdasarkan opsi pengguna ---
             if plot_choice == 'Plotly Pixel':
                 st.subheader("Diagram Hovmoler (Plotly)")
-                max_mae_value = mae_results['mae'].max()
+                
                 fig = make_subplots(
                     rows=1, cols=len(dataset_info),
                     subplot_titles=list(dataset_info.keys()),
@@ -194,7 +240,7 @@ if submit:
                     heatmap = go.Heatmap(
                         z=df_pivot.values, x=[station_short_names[name] for name in df_pivot.columns],
                         y=df_pivot.index, colorscale=[[0, 'rgb(240, 248, 255)'], [1, 'rgb(0, 0, 128)']],
-                        zmin=0, zmax=700,
+                        zmin=final_zmin, zmax=final_zmax, # Menggunakan nilai final_zmin/zmax
                         colorbar=dict(title='MAE', thickness=20) if i == 0 else None,
                         showscale=i == 0, hoverinfo='text', text=hover_text,
                     )
@@ -206,7 +252,7 @@ if submit:
             
             elif plot_choice == 'Matplotlib Contour':
                 st.subheader("Diagram Hovmoler (Matplotlib)")
-                max_mae_value = mae_results['mae'].max()
+                
                 fig, axes = plt.subplots(1, len(dataset_info), figsize=(20, 10), sharey=True)
                 
                 for i, model_name in enumerate(dataset_info.keys()):
@@ -220,7 +266,8 @@ if submit:
                     ax = axes[i]
                     im = ax.contourf(
                         df_pivot.columns, df_pivot.index, df_pivot.values,
-                        levels=np.linspace(0, max_mae_value, 20), cmap='viridis'
+                        # levels disesuaikan dengan nilai final_zmin/zmax
+                        levels=np.linspace(final_zmin, final_zmax, 20), cmap='viridis', extend='both'
                     )
                     ax.set_title(model_name)
                     ax.set_xlabel("Stasiun")
