@@ -93,6 +93,8 @@ if 'comparative_data' not in st.session_state:
     st.session_state.comparative_data = None
 if 'combinations' not in st.session_state:
     st.session_state.combinations = []
+if 'selected_station_name' not in st.session_state:
+    st.session_state.selected_station_name = station_names[0]
 
 with st.sidebar.form("config_form"):
     st.header("⚙️ Konfigurasi")
@@ -100,33 +102,154 @@ with st.sidebar.form("config_form"):
     year_options = list(range(1985, 2015))
     bulan_options = list(range(1, 13))
     
-    st.subheader("Dari")
-    col1, col2 = st.columns(2)
-    with col1:
-        bulan_from = st.selectbox(
-            "Bulan Awal:",
-            bulan_options,
-            index=0,
-            format_func=lambda x: bulan_dict[x]
-        )
-    with col2:
-        tahun_from = st.selectbox("Tahun Awal:", year_options, index=0)
+    display_type = st.radio(
+        "Pilih Tampilan Data:",
+        ["Time Series & Summary", "Bar Chart Komparatif Bulanan (1 Tahun)"] # Nama diubah
+    )
     
-    st.subheader("Sampai")
-    col3, col4 = st.columns(2)
-    with col3:
-        bulan_until = st.selectbox(
-            "Bulan Akhir:",
-            bulan_options,
-            index=len(bulan_options) - 1,
-            format_func=lambda x: bulan_dict[x]
-        )
-    with col4:
-        tahun_until = st.selectbox("Tahun Akhir:", year_options, index=len(year_options) - 1)
+    # --- Konfigurasi Rentang Waktu ---
+    if display_type == "Time Series & Summary":
+        st.subheader("Dari")
+        col1, col2 = st.columns(2)
+        with col1:
+            bulan_from = st.selectbox(
+                "Bulan Awal:",
+                bulan_options,
+                index=0,
+                format_func=lambda x: bulan_dict[x],
+                key="bulan_from_ts"
+            )
+        with col2:
+            tahun_from = st.selectbox("Tahun Awal:", year_options, index=0, key="tahun_from_ts")
         
+        st.subheader("Sampai")
+        col3, col4 = st.columns(2)
+        with col3:
+            bulan_until = st.selectbox(
+                "Bulan Akhir:",
+                bulan_options,
+                index=len(bulan_options) - 1,
+                format_func=lambda x: bulan_dict[x]
+            )
+        with col4:
+            tahun_until = st.selectbox("Tahun Akhir:", year_options, index=len(year_options) - 1)
+        
+        tahun_map_bar_chart = None # Non-relevan
+    
+    else: # display_type == "Bar Chart Komparatif Bulanan (1 Tahun)"
+        st.subheader("Pilih Tahun")
+        
+        # Untuk Bar Chart Komparatif Bulanan, From dan Until harus di set ke 1 Januari - 31 Desember
+        bulan_from = 1
+        bulan_until = 12
+        
+        tahun_map_bar_chart = st.selectbox("Tahun:", year_options, index=0, key="tahun_map")
+        tahun_from = tahun_map_bar_chart
+        tahun_until = tahun_map_bar_chart
+    
     selected_station_name = st.selectbox("Pilih stasiun:", station_names)
+    st.session_state.selected_station_name = selected_station_name
     
     submit = st.form_submit_button("🚀 Submit konfigurasi dan bandingkan")
+
+def plot_monthly_comparative_bar_chart(tahun: int, selected_station_name: str):
+    """
+    Fungsi untuk menampilkan bar chart perbandingan curah hujan bulanan (prediksi vs ground truth)
+    untuk stasiun yang dipilih pada tahun tertentu (48 bar).
+    """
+    st.markdown("---")
+    st.subheader(f"Perbandingan Curah Hujan Bulanan ({tahun}) untuk Stasiun {selected_station_name}")
+
+    station_info = next((s for s in station_data if s["name"] == selected_station_name), None)
+    
+    if not station_info:
+        st.error("❌ Informasi stasiun tidak ditemukan.")
+        return
+        
+    all_data_for_plot = []
+    
+    # 1. Ambil data Padanan (Ground Truth)
+    df_padanan = load_padanan_data(tahun)
+    df_padanan_station = df_padanan[
+        (df_padanan['year'] == tahun) &
+        (df_padanan['latitude'] == station_info['lat']) & 
+        (df_padanan['longitude'] == station_info['lon'])
+    ].copy()
+
+    # Rename kolom untuk Ground Truth
+    if not df_padanan_station.empty and 'rainfall' in df_padanan_station.columns:
+        df_padanan_station = df_padanan_station.rename(columns={'rainfall': 'Curah Hujan (mm)'})
+        df_padanan_station['Tipe Data'] = 'Ground Truth (Rainfall)'
+        df_padanan_station['Warna'] = 'Ground Truth (Rainfall)'
+        all_data_for_plot.append(df_padanan_station[['month', 'Curah Hujan (mm)', 'Tipe Data', 'Warna']])
+    else:
+        st.warning(f"⚠️ Ground Truth (Rainfall) tidak tersedia untuk tahun {tahun}.")
+
+
+    # 2. Ambil data Prediksi (0, 10, 51 Variabel)
+    for dataset_name in dataset_info.keys():
+        df_pred = load_data(dataset_name, tahun)
+        df_pred_station = df_pred[
+            (df_pred['year'] == tahun) &
+            (df_pred['latitude'] == station_info['lat']) & 
+            (df_pred['longitude'] == station_info['lon'])
+        ].copy()
+        
+        if not df_pred_station.empty and 'ch_pred' in df_pred_station.columns:
+            df_pred_station = df_pred_station.rename(columns={'ch_pred': 'Curah Hujan (mm)'})
+            df_pred_station['Tipe Data'] = f'Prediksi ({dataset_name})'
+            df_pred_station['Warna'] = f'Prediksi ({dataset_name})'
+            all_data_for_plot.append(df_pred_station[['month', 'Curah Hujan (mm)', 'Tipe Data', 'Warna']])
+        else:
+            st.warning(f"⚠️ Prediksi ({dataset_name}) tidak tersedia untuk tahun {tahun}.")
+
+
+    if not all_data_for_plot:
+        st.error("❌ Tidak ada data (prediksi maupun ground truth) yang ditemukan untuk periode ini.")
+        return
+
+    # Gabungkan semua data bulanan
+    df_plot = pd.concat(all_data_for_plot, ignore_index=True)
+    
+    # Tambahkan nama bulan untuk label sumbu x
+    df_plot['Bulan'] = df_plot['month'].map(bulan_dict)
+    
+    # Urutkan berdasarkan bulan
+    df_plot = df_plot.sort_values(by=['month', 'Tipe Data'])
+
+    # Kamus warna yang spesifik
+    bar_color_map = {
+        'Ground Truth (Rainfall)': 'saddlebrown',
+        'Prediksi (0 Variabel)': 'royalblue',
+        'Prediksi (10 Variabel)': 'deeppink',
+        'Prediksi (51 Variabel)': 'forestgreen'
+    }
+
+    fig = px.bar(
+        df_plot, 
+        x='Bulan', 
+        y='Curah Hujan (mm)',
+        color='Warna',
+        barmode='group', # Penting: agar bar chart berkelompok (group) per bulan
+        color_discrete_map=bar_color_map,
+        title=f'Curah Hujan Bulanan Komparatif ({tahun}) di Stasiun {selected_station_name}',
+        labels={'Curah Hujan (mm)': 'Curah Hujan (mm)', 'Bulan': 'Bulan'},
+        # hover_data=['Tipe Data', 'Curah Hujan (mm)']
+    )
+    
+    # Perbaiki layout, tampilkan total 48 bar (12 bulan x 4 bar)
+    fig.update_layout(
+        xaxis_title="Bulan",
+        yaxis_title="Curah Hujan (mm)",
+        legend_title="Tipe Data",
+        # Sesuaikan jarak antar grup bar
+        bargap=0.15,
+        # Pastikan Bulan ditampilkan sesuai urutan
+        xaxis={'categoryorder':'array', 'categoryarray': [bulan_dict[m] for m in range(1, 13)]}
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
 
 if submit:
     from_date = (tahun_from, bulan_from)
@@ -134,7 +257,19 @@ if submit:
 
     if from_date > until_date:
         st.error("❌ Tanggal 'Dari' tidak boleh lebih baru dari tanggal 'Sampai'.")
-    else:
+    elif display_type == "Bar Chart Komparatif Bulanan (1 Tahun)":
+        # Pastikan rentang waktu yang dipilih adalah 1 tahun penuh (Januari-Desember)
+        if tahun_from != tahun_until or bulan_from != 1 or bulan_until != 12:
+            st.warning("⚠️ Untuk Bar Chart Komparatif Bulanan, Anda harus memilih rentang waktu 1 tahun penuh (Januari hingga Desember) yang sama.")
+            # Tetap plot sesuai tahun yang dipilih di widget (tahun_map_bar_chart), asumsikan user ingin melihat 12 bulan dari tahun tersebut
+            plot_monthly_comparative_bar_chart(tahun_map_bar_chart, selected_station_name)
+            st.success("✅ Data berhasil dimuat dan siap untuk perbandingan Bar Chart Bulanan.")
+        else:
+            st.session_state.comparative_data = {} # Reset data Time Series
+            plot_monthly_comparative_bar_chart(tahun_map_bar_chart, selected_station_name)
+            st.success("✅ Data berhasil dimuat dan siap untuk perbandingan Bar Chart Bulanan.")
+    
+    else: # Time Series & Summary (Logika lama, disederhanakan)
         tahun_final = list(range(tahun_from, tahun_until + 1))
         
         filtered_data_dict = {}
@@ -155,15 +290,31 @@ if submit:
             if all_filtered:
                 df_filtered_all = pd.concat(all_filtered, ignore_index=True)
                 
-                df_filtered_all['error_bias'] = df_filtered_all['ch_pred'] - df_filtered_all['rainfall']
-                df_filtered_all['absolute_error'] = abs(df_filtered_all['ch_pred'] - df_filtered_all['rainfall'])
-                df_filtered_all['squared_error'] = (df_filtered_all['ch_pred'] - df_filtered_all['rainfall'])**2
+                if 'rainfall' in df_filtered_all.columns:
+                    df_filtered_all['error_bias'] = df_filtered_all['ch_pred'] - df_filtered_all['rainfall']
+                    df_filtered_all['absolute_error'] = abs(df_filtered_all['ch_pred'] - df_filtered_all['rainfall'])
+                    df_filtered_all['squared_error'] = (df_filtered_all['ch_pred'] - df_filtered_all['rainfall'])**2
+                else:
+                    df_filtered_all['error_bias'] = None
+                    df_filtered_all['absolute_error'] = None
+                    df_filtered_all['squared_error'] = None
+
 
                 station_info = next(s for s in station_data if s["name"] == selected_station_name)
                 df_filtered_station = df_filtered_all[
                     (df_filtered_all['latitude'] == station_info['lat']) & 
                     (df_filtered_all['longitude'] == station_info['lon'])
                 ].copy()
+
+                mask = (
+                    (df_filtered_station['year'] > tahun_from) |
+                    ((df_filtered_station['year'] == tahun_from) & (df_filtered_station['month'] >= bulan_from))
+                ) & (
+                    (df_filtered_station['year'] < tahun_until) |
+                    ((df_filtered_station['year'] == tahun_until) & (df_filtered_station['month'] <= bulan_until))
+                )
+                df_filtered_station = df_filtered_station[mask].copy()
+
 
                 filtered_data_dict[dataset_name] = df_filtered_station
             else:
@@ -172,9 +323,12 @@ if submit:
         st.session_state.comparative_data = filtered_data_dict
         st.success("✅ Data berhasil dimuat dan siap untuk perbandingan.")
 
-if st.session_state.comparative_data:
+# --- Tampilan Time Series & Summary (Tidak Berubah) ---
+if st.session_state.comparative_data and st.session_state.comparative_data.keys() and display_type == "Time Series & Summary":
+    
+    # Ringkasan Statistik
     st.markdown("---")
-    st.subheader(f"Ringkasan Statistik Komparatif untuk Stasiun {selected_station_name}")
+    st.subheader(f"Ringkasan Statistik Komparatif untuk Stasiun {st.session_state.selected_station_name}")
     
     summary_cols = ['ch_pred', 'rainfall', 'error_bias', 'absolute_error', 'squared_error']
     comparison_summary = []
@@ -183,124 +337,108 @@ if st.session_state.comparative_data:
         if not df.empty:
             summary_row = {"Metrik": dataset_name}
             for col in summary_cols:
-                if col in df.columns:
+                if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
                     summary_row[f"Mean ({col})"] = df[col].mean()
                     summary_row[f"Sum ({col})"] = df[col].sum()
                 else:
                     summary_row[f"Mean ({col})"] = None
                     summary_row[f"Sum ({col})"] = None
             comparison_summary.append(summary_row)
-        else:
-            summary_row = {"Metrik": dataset_name}
-            for col in summary_cols:
-                summary_row[f"Mean ({col})"] = None
-                summary_row[f"Sum ({col})"] = None
-            comparison_summary.append(summary_row)
 
     if comparison_summary:
-        comparison_df = pd.DataFrame(comparison_summary)
-        comparison_df = comparison_df.set_index("Metrik").T
+        comparison_df = pd.DataFrame(comparison_summary).set_index("Metrik").T
+        for col in comparison_df.columns:
+            comparison_df[col] = comparison_df[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else None)
+            
         st.dataframe(comparison_df)
     else:
         st.warning("⚠️ Tidak ada data untuk ditampilkan. Pastikan rentang waktu valid.")
         
+    # Plot Time Series
     st.markdown("---")
     st.subheader("Plot Perbandingan Time Series")
     
     selected_models = st.multiselect(
         "Pilih model yang akan di-plot:",
         options=list(dataset_info.keys()),
-        default=list(dataset_info.keys())
+        default=list(dataset_info.keys()),
+        key='ts_models'
     )
 
     metrics_to_plot = st.multiselect(
         "Pilih metrik untuk di-plot:",
         options=['ch_pred', 'rainfall', 'error_bias', 'absolute_error', 'squared_error'],
-        default=['ch_pred', 'rainfall']
+        default=['ch_pred', 'rainfall'],
+        key='ts_metrics'
     )
 
     if not selected_models or not metrics_to_plot:
         st.info("💡 Pilih setidaknya satu model dan satu metrik untuk menampilkan plot.")
     else:
-        # Pisahkan data rainfall dari metrik lainnya
         is_rainfall_selected = 'rainfall' in metrics_to_plot
         other_metrics = [m for m in metrics_to_plot if m != 'rainfall']
 
         dfs_to_plot = []
         
-        # Ambil data rainfall dari salah satu model (semuanya sama)
+        # Logika penggabungan data untuk Time Series
         if is_rainfall_selected and selected_models:
             first_model = selected_models[0]
             df_rainfall = st.session_state.comparative_data.get(first_model)
-            if not df_rainfall.empty:
+            if not df_rainfall.empty and 'rainfall' in df_rainfall.columns:
                 rainfall_df = df_rainfall[['year', 'month', 'rainfall']].copy()
-                rainfall_df['model_name'] = 'Ground Truth' # Label khusus
+                rainfall_df['model_name'] = 'Ground Truth'
                 rainfall_df = rainfall_df.rename(columns={'rainfall': 'Value'})
                 rainfall_df['Metric'] = 'rainfall'
                 dfs_to_plot.append(rainfall_df)
 
-        # Gabungkan data untuk metrik lainnya dari model yang dipilih
         for model_name in selected_models:
             df = st.session_state.comparative_data.get(model_name, pd.DataFrame())
             if not df.empty and other_metrics:
-                df_other_metrics = df[['year', 'month'] + other_metrics].copy()
-                df_other_metrics['model_name'] = model_name
+                existing_other_metrics = [m for m in other_metrics if m in df.columns]
                 
-                melted_df = df_other_metrics.melt(
-                    id_vars=['year', 'month', 'model_name'],
-                    value_vars=other_metrics,
-                    var_name='Metric',
-                    value_name='Value'
-                )
-                dfs_to_plot.append(melted_df)
+                if existing_other_metrics:
+                    df_other_metrics = df[['year', 'month'] + existing_other_metrics].copy()
+                    df_other_metrics['model_name'] = model_name
+                    
+                    melted_df = df_other_metrics.melt(
+                        id_vars=['year', 'month', 'model_name'],
+                        value_vars=existing_other_metrics,
+                        var_name='Metric',
+                        value_name='Value'
+                    )
+                    dfs_to_plot.append(melted_df)
 
         if not dfs_to_plot:
             st.warning("⚠️ Data tidak tersedia untuk model atau metrik yang dipilih.")
         else:
             combined_df = pd.concat(dfs_to_plot, ignore_index=True)
             combined_df['date'] = pd.to_datetime(combined_df[['year', 'month']].assign(day=1))
-            
-            # --- FIX: Mengurutkan DataFrame berdasarkan tanggal sebelum plotting ---
             combined_df.sort_values(by='date', inplace=True)
-            # -------------------------------------------------------------------
-            
-            # Buat label baru untuk legend
             combined_df['combined_label'] = combined_df['Metric'] + ' (' + combined_df['model_name'] + ')'
-            # Perbaiki label untuk rainfall
             combined_df.loc[combined_df['Metric'] == 'rainfall', 'combined_label'] = 'Rainfall (Ground Truth)'
 
-            # Kamus (dictionary) untuk pemetaan warna
             color_map = {
-                'Rainfall (Ground Truth)': 'saddlebrown',
-                
-                'ch_pred (0 Variabel)': 'royalblue',
-                'error_bias (0 Variabel)': 'darkblue',
-                'absolute_error (0 Variabel)': 'midnightblue',
-                'squared_error (0 Variabel)': 'navy',
-                
-                'ch_pred (10 Variabel)': 'deeppink',
-                'error_bias (10 Variabel)': 'darkred',
-                'absolute_error (10 Variabel)': 'crimson',
-                'squared_error (10 Variabel)': 'indianred',
-                
-                'ch_pred (51 Variabel)': 'forestgreen',
-                'error_bias (51 Variabel)': 'darkgreen',
-                'absolute_error (51 Variabel)': 'seagreen',
+                'Rainfall (Ground Truth)': 'saddlebrown', 'ch_pred (0 Variabel)': 'royalblue',
+                'error_bias (0 Variabel)': 'darkblue', 'absolute_error (0 Variabel)': 'midnightblue',
+                'squared_error (0 Variabel)': 'navy', 'ch_pred (10 Variabel)': 'deeppink',
+                'error_bias (10 Variabel)': 'darkred', 'absolute_error (10 Variabel)': 'crimson',
+                'squared_error (10 Variabel)': 'indianred', 'ch_pred (51 Variabel)': 'forestgreen',
+                'error_bias (51 Variabel)': 'darkgreen', 'absolute_error (51 Variabel)': 'seagreen',
                 'squared_error (51 Variabel)': 'olivedrab',
             }
 
             fig = px.line(
                 combined_df,
-                x='date',
-                y='Value',
-                color='combined_label',
-                title=f'Perbandingan Time Series untuk Stasiun {selected_station_name}',
+                x='date', y='Value', color='combined_label',
+                title=f'Perbandingan Time Series untuk Stasiun {st.session_state.selected_station_name}',
                 labels={'Value': 'Nilai', 'date': 'Tanggal', 'combined_label': 'Metrik'},
-                markers=True,
-                color_discrete_map=color_map
+                markers=True, color_discrete_map=color_map
             )
-            
             st.plotly_chart(fig, use_container_width=True)
+
+# --- Pesan Akhir (Tidak Berubah) ---
+elif not submit:
+    st.info("💡 Pilih Tampilan Data, rentang waktu/tahun, dan stasiun di sidebar, lalu tekan 'Submit konfigurasi dan bandingkan' untuk melihat data.")
 
 st.markdown(
     """
