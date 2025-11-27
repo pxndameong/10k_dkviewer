@@ -19,7 +19,7 @@ base_url_pred = "data/10k_epoch/pred"
 
 # URL dasar untuk data padanan
 base_url_padanan = "data/10k_epoch/padanan"
-
+##
 # Info dataset yang akan dibandingkan
 dataset_info = {
     "0 Variabel": {"folder": "0_var", "prefix": "all_data_0var"},
