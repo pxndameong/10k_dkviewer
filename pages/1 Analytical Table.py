@@ -33,6 +33,7 @@ bulan_dict = {
 
 # Data stasiun yang baru
 station_data = [
+    {"name": "Stasiun 125 (Lat: -8.5, Lon: 112.75)", "lat": -8.5, "lon": 112.75, "index": 125},
     {"name": "Stasiun 218 (Lat: -8, Lon: 113.5)", "lat": -8, "lon": 113.5, "index": 218},
     {"name": "Stasiun 294 (Lat: -7.5, Lon: 110)", "lat": -7.5, "lon": 110, "index": 294},
     {"name": "Stasiun 329 (Lat: -7.25, Lon: 107.5)", "lat": -7.25, "lon": 107.5, "index": 329},
